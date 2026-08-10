@@ -119,3 +119,4 @@ after 7 days.
   `Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` (plus the
   120/180 variants) if you'd rather ship the original artwork untouched.
 "# mDowloader-IOS" 
+"# mDowloader-IOS" 
