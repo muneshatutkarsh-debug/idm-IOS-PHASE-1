@@ -1,0 +1,107 @@
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & package
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          sw_vers
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate image assets (app icon + logo glyph)
+        run: swift Scripts/MakeIcons.swift "$PWD"
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build (code signing disabled)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project mDownloader.xcodeproj \
+            -scheme mDownloader \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_ENTITLEMENTS="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="build/Build/Products/Release-iphoneos/mDownloader.app"
+          test -d "$APP_PATH"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry mDownloader-unsigned.ipa Payload
+          ls -lh mDownloader-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mDownloader-unsigned-ipa
+          path: mDownloader-unsigned.ipa
+          retention-days: 30
+
+      - name: Publish GitHub release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" \
+            mDownloader-unsigned.ipa \
+            --title "mDownloader unsigned build ${{ github.run_number }}" \
+            --notes "Unsigned IPA built by GitHub Actions from ${{ github.sha }}. Sideload with AltStore / Sideloadly." \
+            || echo "Release step skipped (release may already exist)."
+
+      - name: Report build failure as an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Automated failure report for run ${{ github.run_number }} (commit ${{ github.sha }})."
+            echo
+            echo "### Compiler errors"
+            echo '```'
+            (grep -E "error:|error " build.log | head -n 60) || echo "no matching lines"
+            echo '```'
+            echo
+            echo "### Log tail"
+            echo '```'
+            (tail -n 120 build.log) || echo "no build log"
+            echo '```'
+          } > failure-report.md
+          gh issue create \
+            --title "CI build failed (run ${{ github.run_number }})" \
+            --body-file failure-report.md

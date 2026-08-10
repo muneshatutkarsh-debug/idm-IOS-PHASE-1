@@ -1,0 +1,18 @@
+# Xcode / build output
+build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+*.xcuserdatad
+xcuserdata/
+Payload/
+*.ipa
+*.xcarchive
+build.log
+
+# Generated image assets (produced by Scripts/MakeIcons.swift in CI)
+Assets/glyph.png
+Resources/Assets.xcassets/AppIcon.appiconset/*.png
+Resources/Assets.xcassets/LogoGlyph.imageset/*.png
+
+.DS_Store
